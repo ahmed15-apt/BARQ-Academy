@@ -34,13 +34,13 @@ Record of key architectural decisions made during the infrastructure assessment.
 - **Evidence / commit:** Commit `8ed3c37` (`fix(nginx): correct upstream port to 8080, adjust timeouts, and enable proxy retries`).
 - **Production improvement:** Add active background NGINX health checks (`zone` directives) to proactively exclude dead backends before client requests arrive.
 
-## Decision 5: Non-Hardcoded Environment Variable Sourcing & Secret Isolation
-- **Choice:** Configured `docker-compose.yml` to source environment variables directly from `.env.example` as the canonical template, while adding `config/app.env` and `.env` to `.gitignore`.
-- **Why:** Prevents credential leakage in version control while eliminating broken local/CI environment setups. Internal PostgreSQL connectivity uses `POSTGRES_HOST_AUTH_METHOD=trust` over the isolated `backend` network.
-- **Alternative:** Storing plaintext passwords inside tracked environment files or `docker-compose.yml`.
-- **Trade-off:** Relies on internal network isolation rather than password authentication between application and database containers.
+## Decision 5: Non-Hardcoded Environment Variable Sourcing & Internal Trust Authentication
+- **Choice:** Configured `docker-compose.yml` to source environment variables directly from `.env.example` as the canonical template, added `config/app.env` and `.env` to `.gitignore`, and set `POSTGRES_HOST_AUTH_METHOD=trust`.
+- **Why:** Prevents secret leakage in version control while eliminating broken local/CI environment setups. Setting `trust` mode allows seamless inter-container connectivity without hardcoded database passwords, secured strictly by Docker's isolated `backend` bridge network (`internal: true`) which blocks external host exposure.
+- **Alternative:** Storing plaintext passwords inside tracked environment files, `docker-compose.yml`, or `.env.example`.
+- **Trade-off:** Relies on Docker network boundary isolation rather than database password authentication between application and database containers.
 - **Evidence / commit:** Commit `docs(env): set .env.example as single source of truth and ignore config/app.env`.
-- **Production improvement:** Transition to dynamic secret injection using HashiCorp Vault or AWS Secrets Manager with secret rotation.
+- **Production improvement:** Transition to dynamic secret injection using HashiCorp Vault or AWS Secrets Manager with automated secret rotation.
 
 ## Decision 6: Hybrid CI Pipeline, Trivy Artifacts & Self-Hosted Service Deployment
 - **Choice:** Configured `.github/workflows/ci.yml` as a two-job pipeline:
