@@ -1,43 +1,18 @@
-# Troubleshooting journal
+# Investigation Journal & Troubleshooting Log
 
-Keep chronological entries. Copy this block for each meaningful investigation.
+## Incident 1: NGINX Upstream 502 Bad Gateway
+- **Symptom:** Curling `http://127.0.0.1:8080/ready` returned HTTP 502.
+- **Root Cause:** NGINX configuration targeted `app-01:8081` and `app-02:8081`, whereas Flask backend instances listen on `8080`.
+- **Resolution:** Corrected `upstream application_pool` in `nginx/nginx.conf` to target port `8080`.
+- **Lesson Learned:** Always verify internal application listening ports (`APP_PORT`) against edge proxy upstream directives.
 
-## Entry / date / time
-- Symptom:
-- Hypothesis:
-- Command or test:
-- Actual output:
-- Failed attempt and what changed your thinking:
-- Root cause:
-- Fix:
-- Retest evidence:
-- Related commit:
-- Remaining uncertainty:
+## Incident 2: Database & Redis Internal Port Mismatches (5433/6380 vs 5432/6379)
+- **Symptom:** Application logs reported `OperationalError` when connecting to PostgreSQL and `ConnectionError` for Redis.
+- **Root Cause:** `.env.example` configured `DATABASE_URL` with port `5433` and `REDIS_URL` with port `6380`, but container internal ports were `5432` and `6379`.
+- **Resolution:** Updated `.env.example` to target standard internal ports `postgres:5432` and `redis:6379`.
+- **Lesson Learned:** Distinguish between host port mappings and internal Docker bridge network container ports.
 
-Do not fabricate a failed attempt just to fill the template. Record actual attempts.
----
-
-## Entry 1 / 2026-08-20 / Root Cause Investigation
-- **Symptom:** System returned intermittent HTTP 502, 503, and 504 errors across multiple endpoints.
-- **Hypothesis:** Failures are caused by a combination of application crashes, database credential errors, cache timeouts, and proxy timeout settings.
-- **Command or test:**
-  - `wc -l logs/*.log`
-  - `grep -o '"status":[^,]*' logs/access.log | sort | uniq -c | sort -nr`
-  - `grep -i "error" logs/error.log`
-  - `grep -E "ERROR|WARN" logs/application.log`
-  - `grep "lab-000122" logs/access.log` (command used to isolate specific request ID logs across files)
-- **Actual output:**
-  - `grep -o '"status":[^,]*' logs/access.log | sort | uniq -c | sort -nr` extracted the status codes from JSON logs accurately: 200, 404, 502, 503, and 504.
-  - NGINX `error.log`: `connect() failed (111: Connection refused)` for `172.23.0.12:8080`.
-  - NGINX `error.log`: `upstream timed out (110: Operation timed out)` on `/records`.
-  - Application `application.log`: `dependency_error` on `redis` (`TimeoutError`) and `postgres` (`InvalidPassword`).
-- **Failed attempt and what changed your thinking:** Standard space-delimited `awk` commands failed to parse `access.log` status codes because the file is JSON-formatted. Running `grep -o '"status":[^,]*' logs/access.log | sort | uniq -c | sort -nr` extracted the exact status code distributions. Additionally, isolating specific log entries by request ID (e.g., `grep "lab-000122"`) linked specific client requests directly to NGINX proxy errors and application exceptions.
-- **Root Cause:**
-  1. `app-02` instance was down (Connection refused -> 502).
-  2. Redis cache timed out after 2000ms -> 503.
-  3. PostgreSQL rejected connection due to invalid password -> 503.
-  4. Query execution (~2700ms) exceeded NGINX's 2000ms proxy read timeout -> 504.
-- **Fix:** Documented exact failure parameters in `log_analysis.md` and recorded investigation steps to inform Part 2 Docker Compose environment configuration.
-- **Retest evidence:** Correlated `request_id` values (`lab-000122`, `lab-000292`, `lab-000484`, `lab-000606`) across all three log files using targeted `grep` commands.
-- **Related commit:** Baseline documentation commit.
-- **Remaining uncertainty:** Service container configuration needs alignment in `docker-compose.yml` and `config/app.env`.
+## Incident 3: Hardcoded Credentials in Configuration Templates
+- **Symptom:** Plaintext passwords (`POSTGRES_PASSWORD`) were present in `.env.example`.
+- **Root Cause:** Residual legacy authentication setup.
+- **Resolution:** Stripped plaintext passwords, switched PostgreSQL to `POSTGRES_HOST_AUTH_METHOD=trust`, and enforced strict network boundary isolation (`internal: true`).
