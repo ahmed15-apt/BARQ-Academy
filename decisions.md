@@ -34,10 +34,21 @@ Record of key architectural decisions made during the infrastructure assessment.
 - **Evidence / commit:** Commit `8ed3c37` (`fix(nginx): correct upstream port to 8080, adjust timeouts, and enable proxy retries`).
 - **Production improvement:** Add active background NGINX health checks (`zone` directives) to proactively exclude dead backends before client requests arrive.
 
-## Decision 5: Non-Hardcoded Credential Ingestion
-- **Choice:** Centralized database credentials and passwords inside `config/app.env` and passed them via Compose `env_file`.
-- **Why:** Prevents secret leakage in version control while making environment parameters easily configurable.
-- **Alternative:** Standard environment variables inside `docker-compose.yml` or Docker Secrets.
-- **Trade-off:** Secrets remain readable in standard container environment variables unless using file-based secrets.
-- **Evidence / commit:** Commit `d01f13a` (`fix(compose): resolve app binding, instance IDs, healthchecks, and db persistence`).
+## Decision 5: Non-Hardcoded Environment Variable Sourcing & Secret Isolation
+- **Choice:** Configured `docker-compose.yml` to source environment variables directly from `.env.example` as the canonical template, while adding `config/app.env` and `.env` to `.gitignore`.
+- **Why:** Prevents credential leakage in version control while eliminating broken local/CI environment setups. Internal PostgreSQL connectivity uses `POSTGRES_HOST_AUTH_METHOD=trust` over the isolated `backend` network.
+- **Alternative:** Storing plaintext passwords inside tracked environment files or `docker-compose.yml`.
+- **Trade-off:** Relies on internal network isolation rather than password authentication between application and database containers.
+- **Evidence / commit:** Commit `docs(env): set .env.example as single source of truth and ignore config/app.env`.
 - **Production improvement:** Transition to dynamic secret injection using HashiCorp Vault or AWS Secrets Manager with secret rotation.
+
+## Decision 6: Hybrid CI Pipeline, Trivy Artifacts & Self-Hosted Service Deployment
+- **Choice:** Configured `.github/workflows/ci.yml` as a two-job pipeline:
+  1. **`security-scan`**: Runs container image vulnerability scans (Trivy) on `ubuntu-latest`, exports the report to `trivy-report.txt`, and uploads `trivy-vulnerability-report` as a downloadable GitHub artifact.
+  2. **`validate-stack`**: Executes stack build, startup, readiness wait polling, and `python3 validate.py` on a local `self-hosted` runner (`barq-docker-compose`).
+- **Runner Deployment:** Deployed the GitHub Actions runner binary on the target host and registered it as a persistent systemd service via `./svc.sh install` and `./svc.sh start` to ensure automatic startup and background execution across host reboots.
+- **Why:** Isolates security scanning and artifact publishing on cloud runners while validating actual Docker Compose orchestration, network bindings, and persistent volumes directly on target host infrastructure.
+- **Alternative:** Running all jobs on `ubuntu-latest` (lacks local host network fidelity) or running raw ephemeral runner commands (`./run.sh`) without service management.
+- **Trade-off:** Requires maintaining the host environment and monitoring the background runner service.
+- **Evidence / commit:** Commit `ci(pipeline): enable ubuntu-latest security scan with Trivy artifact and self-hosted deployment`.
+- **Production improvement:** Implement runner auto-scaling (e.g., Actions Runner Controller on Kubernetes) to dynamically provision ephemeral runner pods per job.
