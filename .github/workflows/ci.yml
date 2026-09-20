@@ -7,41 +7,52 @@ on:
     branches: [ main ]
 
 jobs:
-  validate-stack:
-    name: Build, Scan and Validate
+  # Job 1: Static and Image Security Scanning on GitHub-hosted runner
+  security-scan:
+    name: Security & Vulnerability Scan
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Prepare environment variables
-      - name: Setup Environment
-        run: cp .env.example .env
-
-      # 3. Syntax / Compose checks
-      - name: Validate Docker Compose Config
-        run: docker compose config --quiet
-
-      # 4. Extra Credit: Container Image Security Scan (Trivy)
+      # 1. Run Trivy and output results to a file
       - name: Security Scan Container Images
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
           ignore-unfixed: true
           format: 'table'
+          output: 'trivy-report.txt'
           severity: 'HIGH,CRITICAL'
 
-      # 5. Build images
+      # 2. Upload scan report as a downloadable GitHub artifact
+      - name: Upload Security Scan Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-vulnerability-report
+          path: trivy-report.txt
+
+  # Job 2: Build, Deploy & Validate on Self-Hosted runner
+  validate-stack:
+    name: Build and Validate Stack
+    needs: security-scan
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Config
+        run: docker compose config --quiet
+
       - name: Build Stack Images
         run: docker compose build
 
-      # 6. Start stack services
       - name: Start Stack Containers
         run: docker compose up -d
 
-      # 7. Bounded wait for stack readiness
       - name: Wait for Services Readiness
         run: |
           echo "Waiting for stack readiness via /ready endpoint..."
@@ -58,11 +69,9 @@ jobs:
           docker compose logs
           exit 1
 
-      # 8. Run bounded python validation suite (Fails CI on non-zero exit)
       - name: Run Validation Suite
         run: python3 validate.py
 
-      # 9. Clean up stack on completion
       - name: Tear Down Stack
         if: always()
         run: docker compose down -v
