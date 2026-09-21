@@ -57,8 +57,9 @@ jobs:
         run: |
           echo "Waiting for stack readiness via /ready endpoint..."
           for i in {1..30}; do
-            STATUS=$(curl -s http://127.0.0.1:8080/ready | grep -o '"status":"ready"' || true)
-            if [ "$STATUS" = '"status":"ready"' ]; then
+            RESPONSE=$(curl -s http://127.0.0.1:8090/ready || true)
+            STATUS=$(echo "$RESPONSE" | grep -oE '"status":"(ok|ready)"' || true)
+            if [ -n "$STATUS" ]; then
               echo "Stack is ready and fully operational!"
               exit 0
             fi
