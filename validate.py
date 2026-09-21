@@ -8,7 +8,7 @@ import json
 import urllib.request
 import urllib.error
 
-BASE_URL = "http://127.0.0.1:8080"
+BASE_URL = "http://127.0.0.1:8090"
 
 def log(check_name, status, details=""):
     mark = "PASS" if status else "FAIL"
